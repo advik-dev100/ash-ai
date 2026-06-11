@@ -1,0 +1,339 @@
+const CITY = "Gurugram";
+const API = "https://api.anthropic.com/v1/messages";
+const MODEL = "claude-sonnet-4-20250514";
+const SYSTEM_PROMPT = `You are Ash, a witty, smart, friendly AI assistant. The user is in ${CITY}, India.
+Rules:
+- Keep responses SHORT (1-3 sentences) unless asked for detail
+- Be conversational, warm, occasionally funny
+- For weather: give temperature + condition + brief advice
+- For jokes: make them clever, not cheesy
+- For tips: make them specific and actionable
+- For facts: pick genuinely surprising ones
+- For toss/flip coin: just say heads or tails with a fun one-liner
+- Plain text only, no markdown, no asterisks, no bullet points
+- Never say "As an AI" or "I'm just a language model"`;
+
+let ttsOn = true;
+let ttsUnlocked = false;
+let listening = false;
+let recog = null;
+let chatHistory = [];
+
+const chatEl = document.getElementById('chat');
+const typingEl = document.getElementById('typing-indicator');
+const orbStatus = document.getElementById('orb-status');
+const orbCore = document.getElementById('orb-core');
+const orbRing = document.getElementById('orb-ring');
+const micBtn = document.getElementById('mic-btn');
+const ttsBtn = document.getElementById('tts-toggle');
+
+/* ── TTS unlock ── */
+function unlockTTS() {
+  if (ttsUnlocked || !window.speechSynthesis) return;
+  const dummy = new SpeechSynthesisUtterance('');
+  dummy.volume = 0;
+  window.speechSynthesis.speak(dummy);
+  ttsUnlocked = true;
+}
+document.body.addEventListener('click', unlockTTS, { once: true });
+document.body.addEventListener('touchstart', unlockTTS, { once: true });
+
+/* load voices early */
+if (window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.addEventListener('voiceschanged', () => window.speechSynthesis.getVoices());
+}
+
+function speak(text) {
+  if (!ttsOn || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = 'en-IN';
+  utt.rate = 1.05;
+  utt.pitch = 1.05;
+  utt.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const pick =
+    voices.find(v => v.lang === 'en-IN') ||
+    voices.find(v => v.lang.startsWith('en-') && /female|woman|girl/i.test(v.name)) ||
+    voices.find(v => v.lang.startsWith('en'));
+  if (pick) utt.voice = pick;
+  window.speechSynthesis.speak(utt);
+}
+
+/* ── orb states ── */
+function setOrbState(state) {
+  if (state === 'idle') {
+    orbCore.setAttribute('fill', 'url(#og)');
+    orbRing.classList.remove('spin');
+    orbStatus.textContent = 'tap to speak';
+    micBtn.classList.remove('listening');
+  } else if (state === 'listening') {
+    orbCore.setAttribute('fill', 'url(#og2)');
+    orbRing.classList.add('spin');
+    orbStatus.textContent = 'listening…';
+    micBtn.classList.add('listening');
+  } else if (state === 'thinking') {
+    orbCore.setAttribute('fill', 'url(#og3)');
+    orbRing.classList.add('spin');
+    orbStatus.textContent = 'thinking…';
+    micBtn.classList.remove('listening');
+  }
+}
+
+/* ── helpers ── */
+function nowStr() {
+  return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function hideWelcome() {
+  const w = document.getElementById('welcome');
+  if (w) w.remove();
+}
+
+function showTyping() {
+  typingEl.classList.add('show');
+  typingEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function hideTyping() { typingEl.classList.remove('show'); }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function addMsg(text, role, badge, badgeClass, isHTML) {
+  hideWelcome();
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  if (role === 'bot' && badge) {
+    const b = document.createElement('div');
+    b.className = `badge b-${badgeClass}`;
+    b.textContent = badge;
+    bubble.appendChild(b);
+  }
+
+  if (isHTML) {
+    const content = document.createElement('div');
+    content.innerHTML = text;
+    bubble.appendChild(content);
+  } else {
+    const t = document.createElement('span');
+    t.textContent = text;
+    bubble.appendChild(t);
+  }
+
+  const time = document.createElement('div');
+  time.className = 'msg-time';
+  time.textContent = nowStr();
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(time);
+  chatEl.insertBefore(wrap, typingEl);
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ── Claude API ── */
+async function callClaude(userText, useSearch) {
+  setOrbState('thinking');
+  showTyping();
+
+  chatHistory.push({ role: 'user', content: userText });
+  if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+
+  const body = {
+    model: MODEL,
+    max_tokens: 1000,
+    system: SYSTEM_PROMPT,
+    messages: chatHistory
+  };
+  if (useSearch) {
+    body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  }
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    const reply = (data.content || [])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join(' ')
+      .trim() || "Hmm, I couldn't get a response. Try again?";
+    chatHistory.push({ role: 'assistant', content: reply });
+    hideTyping();
+    setOrbState('idle');
+    return reply;
+  } catch (e) {
+    hideTyping();
+    setOrbState('idle');
+    return "Connection hiccup! Check your internet and try again.";
+  }
+}
+
+/* ── intent detection ── */
+function detectIntent(msg) {
+  const l = msg.toLowerCase();
+  if (/weather|temperature|rain|hot|cold|humid|forecast|climate/.test(l)) return 'weather';
+  if (/joke|funny|laugh|humor|hilarious|comedy/.test(l)) return 'joke';
+  if (/coin|toss|flip|heads|tails/.test(l)) return 'toss';
+  if (/tip|advice|suggest|how to|trick|hack|improve/.test(l)) return 'tips';
+  if (/search|find|look up|latest|news|current|today|2026/.test(l)) return 'search';
+  return 'answer';
+}
+
+/* ── send message ── */
+async function sendMsg(inputText) {
+  unlockTTS();
+  const txtEl = document.getElementById('txt');
+  const msg = (inputText || txtEl.value).trim();
+  if (!msg) return;
+  if (!inputText) txtEl.value = '';
+
+  addMsg(msg, 'user');
+
+  const intent = detectIntent(msg);
+
+  if (intent === 'toss') {
+    const result = Math.random() < 0.5 ? 'Heads' : 'Tails';
+    addMsg(
+      `<span class="coin-result">🪙</span> <strong>${result}!</strong> The coin has spoken.`,
+      'bot', 'coin toss', 'toss', true
+    );
+    speak(`It's ${result}!`);
+    return;
+  }
+
+  const useSearch = intent === 'weather' || intent === 'search'
+    || /latest|news|current|today|2026|price|score|result/.test(msg.toLowerCase());
+
+  const reply = await callClaude(msg, useSearch);
+
+  const badges = {
+    weather: ['weather', 'weather'],
+    joke:    ['joke',    'joke'],
+    tips:    ['tip',     'tips'],
+    search:  ['web search', 'search'],
+    answer:  ['ash',    'answer']
+  };
+  const [badgeText, badgeClass] = badges[intent] || badges.answer;
+  addMsg(reply, 'bot', badgeText, badgeClass);
+  speak(reply);
+}
+
+/* ── quick commands ── */
+async function quickCmd(type) {
+  unlockTTS();
+  if (type === 'search') {
+    const q = prompt('What do you want to search for?');
+    if (!q) return;
+    sendMsg(`Search: ${q}`);
+    return;
+  }
+  if (type === 'time') {
+    const d = new Date();
+    const dateStr = d.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    addMsg('What time and date is it?', 'user');
+    const reply = `It's ${timeStr} on ${dateStr}.`;
+    addMsg(reply, 'bot', 'ash', 'answer');
+    speak(reply);
+    return;
+  }
+  const cmds = {
+    weather: `What's the weather like in ${CITY} right now?`,
+    joke:    'Tell me a funny joke',
+    toss:    'Flip a coin',
+    tip:     'Give me one useful life tip',
+    fact:    "Tell me a surprising fact most people don't know",
+    roast:   'Give me a friendly light-hearted roast. Be funny but not mean.'
+  };
+  sendMsg(cmds[type]);
+}
+
+/* ── TTS toggle ── */
+function toggleTTS() {
+  unlockTTS();
+  ttsOn = !ttsOn;
+  ttsBtn.textContent = ttsOn ? '🔊' : '🔇';
+  ttsBtn.classList.toggle('on', ttsOn);
+  showToast(ttsOn ? 'Voice on' : 'Voice off');
+  if (ttsOn) speak('Voice is on!');
+  else window.speechSynthesis && window.speechSynthesis.cancel();
+}
+
+/* ── clear chat ── */
+function clearChat() {
+  chatHistory = [];
+  while (chatEl.firstChild) chatEl.removeChild(chatEl.firstChild);
+  chatEl.appendChild(typingEl);
+
+  const w = document.createElement('div');
+  w.id = 'welcome';
+  w.innerHTML = `<h2>Hey, I'm <span style="color:var(--accent2)">Ash</span></h2>
+    <p>Your smart AI assistant. Ask me anything — weather, jokes, tips, facts, or search the web.</p>`;
+  Object.assign(w.style, {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', padding: '20px', textAlign: 'center', flex: '1'
+  });
+  w.querySelector('h2').style.cssText = 'font-family:var(--font-display);font-size:28px;font-weight:700;letter-spacing:-0.5px;margin-bottom:8px';
+  w.querySelector('p').style.cssText = 'font-size:14px;color:var(--text2);max-width:280px;line-height:1.6';
+  chatEl.insertBefore(w, typingEl);
+  showToast('Chat cleared');
+}
+
+/* ── mic / speech recognition ── */
+function toggleMic() {
+  unlockTTS();
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    showToast('Voice not supported — try Chrome on Android!');
+    return;
+  }
+  if (listening) {
+    recog && recog.stop();
+    listening = false;
+    setOrbState('idle');
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recog = new SR();
+  recog.lang = 'en-IN';
+  recog.interimResults = false;
+  recog.maxAlternatives = 1;
+  recog.onstart = () => { listening = true; setOrbState('listening'); };
+  recog.onresult = e => {
+    const transcript = e.results[0][0].transcript;
+    document.getElementById('txt').value = transcript;
+    listening = false;
+    sendMsg();
+  };
+  recog.onerror = () => {
+    listening = false;
+    setOrbState('idle');
+    showToast("Couldn't hear you clearly. Try again!");
+  };
+  recog.onend = () => {
+    listening = false;
+    if (orbStatus.textContent === 'listening…') setOrbState('idle');
+  };
+  recog.start();
+}
+
+/* ── keyboard ── */
+document.getElementById('txt').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendMsg();
+});
+
+/* ── service worker ── */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}

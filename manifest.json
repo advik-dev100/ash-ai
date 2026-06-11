@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#0a0a0f"/>
+  <meta name="description" content="Ash — Your smart AI voice assistant"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Ash"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <title>Ash AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div id="logo">Ash<span>.</span></div>
+    <div id="header-right">
+      <button id="tts-toggle" title="Toggle voice output" onclick="toggleTTS()">🔊</button>
+      <button id="clear-btn" title="Clear chat" onclick="clearChat()">🗑</button>
+    </div>
+  </div>
+
+  <div id="chat">
+    <div id="welcome">
+      <h2>Hey, I'm <span>Ash</span></h2>
+      <p>Your smart AI assistant. Ask me anything — weather, jokes, tips, facts, or search the web.</p>
+    </div>
+    <div id="typing-indicator">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+  </div>
+
+  <div id="orb-area">
+    <div id="orb-canvas" onclick="toggleMic()">
+      <svg id="orb-svg" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="og" cx="40%" cy="35%" r="60%">
+            <stop offset="0%" stop-color="#8b7cf8"/>
+            <stop offset="100%" stop-color="#4338ca"/>
+          </radialGradient>
+          <radialGradient id="og2" cx="40%" cy="35%" r="60%">
+            <stop offset="0%" stop-color="#34d399"/>
+            <stop offset="100%" stop-color="#059669"/>
+          </radialGradient>
+          <radialGradient id="og3" cx="40%" cy="35%" r="60%">
+            <stop offset="0%" stop-color="#f472b6"/>
+            <stop offset="100%" stop-color="#db2777"/>
+          </radialGradient>
+        </defs>
+        <circle cx="32" cy="32" r="20" fill="url(#og)" id="orb-core"/>
+        <g id="orb-ring">
+          <circle cx="32" cy="32" r="27" fill="none" stroke="rgba(139,124,248,0.25)" stroke-width="1.5" stroke-dasharray="8 5"/>
+        </g>
+        <circle cx="32" cy="32" r="30" fill="none" stroke="rgba(139,124,248,0.08)" stroke-width="1"/>
+      </svg>
+    </div>
+    <div id="orb-status">tap to speak</div>
+  </div>
+
+  <div id="chips-wrap">
+    <div class="chip" onclick="quickCmd('weather')"><span class="chip-icon">🌤</span> Weather</div>
+    <div class="chip" onclick="quickCmd('joke')"><span class="chip-icon">😂</span> Tell a joke</div>
+    <div class="chip" onclick="quickCmd('toss')"><span class="chip-icon">🪙</span> Flip coin</div>
+    <div class="chip" onclick="quickCmd('tip')"><span class="chip-icon">💡</span> Life tip</div>
+    <div class="chip" onclick="quickCmd('fact')"><span class="chip-icon">🧠</span> Random fact</div>
+    <div class="chip" onclick="quickCmd('time')"><span class="chip-icon">🕐</span> Time & date</div>
+    <div class="chip" onclick="quickCmd('search')"><span class="chip-icon">🔍</span> Search web</div>
+    <div class="chip" onclick="quickCmd('roast')"><span class="chip-icon">🔥</span> Roast me</div>
+  </div>
+
+  <div id="bottom">
+    <div id="input-row">
+      <input id="txt" type="text" placeholder="Ask Ash anything…" autocomplete="off" autocorrect="off"/>
+      <button id="mic-btn" onclick="toggleMic()" title="Tap to speak">🎤</button>
+      <button id="send-btn" onclick="sendMsg()" title="Send">➤</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
